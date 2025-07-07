@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DF Admin - Team & Player Stats Editor (Additive)</title>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f2f2f2;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 90%;
+            max-width: 900px; /* Increased max-width to accommodate new content better */
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 2em;
+        }
+        .form-group {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        .form-group input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            max-width: 300px;
+            box-sizing: border-box;
+        }
+        .form-group button {
+            padding: 10px 20px;
+            background-color: #007bff; /* Blue button */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+            margin-top: 10px;
+        }
+        .form-group button:hover {
+            background-color: #0056b3;
+        }
+
+        .loading-spinner {
+            display: none;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-message {
+            text-align: center;
+            color: #777;
+            font-style: italic;
+            padding: 15px;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .error-message {
+            text-align: center;
+            color: #dc3545;
+            font-weight: bold;
+            padding: 15px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .success-message {
+            text-align: center;
+            color: #28a745;
+            font-weight: bold;
+            padding: 15px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .edit-form-section {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            display: none; /* Hidden until data is loaded */
+        }
+        .edit-form-section h2 {
+            color: #007bff;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .data-group {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .data-group h3 {
+            color: #4CAF50;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.15em;
+            text-align: center;
+        }
+        .data-field {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px; /* Space between label/current and input */
+        }
+        .data-field label {
+            min-width: 120px; /* Adjust as needed */
+            font-weight: bold;
+            color: #555;
+            text-align: right;
+        }
+        .data-field .current-value {
+            min-width: 80px; /* Space for current value */
+            font-size: 0.9em;
+            color: #777;
+        }
+        .data-field input[type="number"] {
+            flex-grow: 1; /* Take remaining space */
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1em;
+            box-sizing: border-box;
+            max-width: 150px; /* Limit input width */
+        }
+        .data-field input[type="text"][readonly] {
+            background-color: #e9e9e9;
+            cursor: default;
+        }
+
+        .player-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        .player-list li {
+            background-color: #e9ffe9;
+            border: 1px solid #c8e6c9;
+            border-left: 4px solid #4CAF50;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .player-list li .player-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap; /* Allow wrapping on small screens */
+        }
+
+        /* Styles for the highlighted box around IGN and UID */
+        .player-list li .player-header .ign-uid-box {
+            background-color: #e3f2fd; /* Light blue background */
+            border: 1px solid #90caf9; /* Light blue border */
+            border-radius: 5px;
+            padding: 8px 12px; /* Internal padding */
+            display: flex;
+            align-items: center;
+            gap: 15px; /* Space between IGN and UID */
+            flex-grow: 1; /* Allow it to take available space */
+            justify-content: center; /* Center content if wider */
+            margin-bottom: 10px; /* Space below the box to the first stats field */
+        }
+
+        /* Adjustments for player-name within the new box */
+        .player-list li .player-header .ign-uid-box .player-name {
+            color: #1976d2; /* Darker blue to stand out */
+            font-size: 1.4em; /* Larger to highlight more */
+            font-weight: bolder; /* Extra bold */
+            margin-right: 0; /* Remove previous margin-right as gap handles spacing */
+        }
+
+        /* Adjustments for player-uid within the new box */
+        .player-list li .player-header .ign-uid-box .player-uid {
+            font-size: 1.0em; /* Slightly larger than before, but smaller than IGN */
+            color: #555;
+            font-weight: bold; /* Make UID bold too */
+        }
+
+        /* Clear separation after each player data field */
+        .player-list li .data-field {
+            margin-bottom: 15px; /* Increase space after each field */
+            padding-bottom: 15px; /* Add padding for border */
+            border-bottom: 1px dashed #e0e0e0; /* Dashed line for separation */
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Remove border from the last data-field of a player */
+        .player-list li .data-field:last-of-type {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+        }
+
+        .save-button-group {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .save-button-group button {
+            padding: 12px 25px;
+            background-color: #28a745; /* Green for Save */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+        .save-button-group button:hover {
+            background-color: #218838;
+        }
+
+        /* --- New CSS from all_tournaments.html --- */
+        #tournamentsDisplaySection {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            display: none; /* Hidden by default, shown after auth */
+        }
+        #tournamentsDisplaySection h2 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .tournament-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 20px;
+        }
+        .tournament-list li {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-left: 5px solid #007bff; /* Blue accent for tournaments */
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .tournament-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .tournament-info {
+            flex-grow: 1;
+            font-size: 1.1em;
+            color: #333;
+        }
+        .tournament-info strong {
+            font-size: 1.2em;
+            color: #0056b3;
+        }
+        .tournament-info span {
+            display: block;
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .details-button {
+            padding: 8px 15px;
+            background-color: #4CAF50; /* Green button */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+        .details-button:hover {
+            background-color: #45a049;
+        }
+
+        .details-content {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #eee;
+            display: none; /* Hidden by default */
+        }
+        .details-content h3 {
+            color: #555;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .confirmed-teams-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .confirmed-teams-list li {
+            background-color: #e9ffe9; /* Lighter green for team items */
+            border: 1px solid #c8e6c9;
+            border-left: 4px solid #4CAF50;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1em;
+        }
+        .confirmed-teams-list li strong {
+            color: #333;
+        }
+        /* Style for the copy button */
+        .copy-button {
+            padding: 5px 10px;
+            margin-left: 10px;
+            background-color: #007bff; /* Blue */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background-color 0.2s ease;
+        }
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+        .team-code-group {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Team & Player Stats Editor (Additive)</h1>
+
+        <div class="loading-spinner" id="loadingSpinner"></div>
+        <p id="authStatusMessage" class="info-message">Checking authentication status...</p>
+        <p id="systemMessage" class="info-message" style="display:none;"></p>
+        <p id="errorMessage" class="error-message" style="display:none;"></p>
+
+        <div id="authAndInputSection">
+            <div id="tournamentsDisplaySection" style="display:none;">
+                <h2>Tournaments & Confirmed Teams</h2>
+                <ul id="tournamentsList" class="tournament-list">
+                    </ul>
+                <p id="noTournamentsMessage" class="info-message" style="display:none;">
+                    No tournaments found.
+                </p>
+            </div>
+            <div id="dataInputSection" style="display:none;">
+                <div class="form-group">
+                    <label for="teamCodeInput">Enter Team Code:</label>
+                    <input type="text" id="teamCodeInput" placeholder="e.g., FBGMMHG" required>
+                    <button id="loadTeamDataButton">Load Team Data</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="editFormSection" class="edit-form-section">
+            <h2>Edit Stats for Team: <span id="currentTeamNameDisplay"></span></h2>
+
+            <div class="data-group team-stats-fields">
+                <h3>Team Statistics</h3>
+                <div class="data-field">
+                    <label>Matches to Add:</label>
+                    <span id="currentTeamMatches" class="current-value">Current: 0</span>
+                    <input type="number" id="teamMatchesEdit" min="0" value="0">
+                </div>
+                <div class="data-field">
+                    <label>Wins to Add:</label>
+                    <span id="currentTeamWins" class="current-value">Current: 0</span>
+                    <input type="number" id="teamWinsEdit" min="0" value="0">
+                </div>
+                <div class="data-field">
+                    <label>Kills to Add:</label>
+                    <span id="currentTeamKills" class="current-value">Current: 0</span>
+                    <input type="number" id="teamKillsEdit" min="0" value="0">
+                </div>
+                <div class="data-field">
+                    <label>Ranking Points to Add:</label>
+                    <span id="currentTeamRankingPoints" class="current-value">Current: 0</span>
+                    <input type="number" id="teamRankingPointsEdit" min="0" value="0">
+                </div>
+            </div>
+
+            <div class="data-group player-stats-list">
+                <h3>Player Statistics</h3>
+                <ul id="playersStatsList">
+                    </ul>
+                <p id="noPlayersMessage" class="info-message" style="display:none;">No players found for this team.</p>
+            </div>
+
+            <div class="save-button-group">
+                <button id="saveAllChangesButton">Save All Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBgqgQDWEwohMJnhTcUhBx6chmXOUMSanw",
+            authDomain: "grindzone-26ee9.firebaseapp.com",
+            projectId: "grindzone-26ee9",
+            storageBucket: "grindzone-26ee9.appspot.com",
+            messagingSenderId: "457720848561",
+            appId: "1:457720848561:web:f2cde2e7e7542b2a9d8290"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const teamsCollection = db.collection('teams');
+        const usersCollection = db.collection('users');
+        const tournamentsCollection = db.collection('tournaments'); // New: Reference to tournaments
+
+        // DOM Elements
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const authStatusMessage = document.getElementById('authStatusMessage');
+        const systemMessage = document.getElementById('systemMessage');
+        const errorMessage = document.getElementById('errorMessage');
+
+        const dataInputSection = document.getElementById('dataInputSection');
+        const teamCodeInput = document.getElementById('teamCodeInput');
+        const loadTeamDataButton = document.getElementById('loadTeamDataButton');
+
+        const editFormSection = document.getElementById('editFormSection');
+        const currentTeamNameDisplay = document.getElementById('currentTeamNameDisplay');
+
+        // Team Stats Fields (for ADDITIONS)
+        const teamMatchesEdit = document.getElementById('teamMatchesEdit');
+        const teamWinsEdit = document.getElementById('teamWinsEdit');
+        const teamKillsEdit = document.getElementById('teamKillsEdit');
+        const teamRankingPointsEdit = document.getElementById('teamRankingPointsEdit');
+
+        // Current Team Stat Displays (READ-ONLY)
+        const currentTeamMatchesDisplay = document.getElementById('currentTeamMatches');
+        const currentTeamWinsDisplay = document.getElementById('currentTeamWins');
+        const currentTeamKillsDisplay = document.getElementById('currentTeamKills');
+        const currentTeamRankingPointsDisplay = document.getElementById('currentTeamRankingPoints');
+
+        // Player Stats List
+        const playersStatsList = document.getElementById('playersStatsList');
+        const noPlayersMessage = document.getElementById('noPlayersMessage');
+        const saveAllChangesButton = document.getElementById('saveAllChangesButton');
+
+        // NEW DOM Elements for Tournaments Display
+        const tournamentsDisplaySection = document.getElementById('tournamentsDisplaySection');
+        const tournamentsList = document.getElementById('tournamentsList');
+        const noTournamentsMessageTournaments = document.getElementById('noTournamentsMessage'); // Renamed to avoid conflict
+
+        let currentTeamCode = null;
+        // playerStatsInputs will store references to the 'to add' input fields AND current avg display
+        let playerStatsInputs = {}; 
+
+        // =========================================================
+        // Helper Functions 
+        // =========================================================
+
+        // Function to display error or status messages
+        const displayMessage = (element, message, type = 'info') => {
+            element.textContent = message;
+            element.className = type === 'error' ? 'error-message' : (type === 'success' ? 'success-message' : 'info-message');
+            element.style.display = 'block';
+        };
+
+        // Function to hide all general UI elements (messages, spinner, input section, edit form)
+        const hideAllUIElements = () => {
+            authStatusMessage.style.display = 'none';
+            systemMessage.style.display = 'none';
+            errorMessage.style.display = 'none';
+            loadingSpinner.style.display = 'none';
+            dataInputSection.style.display = 'none'; 
+            editFormSection.style.display = 'none'; 
+            tournamentsDisplaySection.style.display = 'none'; // NEW: Hide tournaments section
+        };
+
+        // =========================================================
+        // Main Logic Functions
+        // =========================================================
+
+        // Function to load team and player data for editing
+        const loadTeamData = async () => {
+            currentTeamCode = teamCodeInput.value.trim();
+            if (!currentTeamCode) {
+                displayMessage(errorMessage, 'Please enter a team code.', 'error');
+                return;
+            }
+
+            hideAllUIElements();
+            loadingSpinner.style.display = 'block';
+            displayMessage(systemMessage, `Loading data for team "${currentTeamCode}"...`, 'info');
+            
+            // Clear previous state
+            editFormSection.style.display = 'none';
+            playersStatsList.innerHTML = ''; 
+            noPlayersMessage.style.display = 'none';
+            playerStatsInputs = {}; 
+
+            // Reset input fields to 0 for new additions
+            teamMatchesEdit.value = 0;
+            teamWinsEdit.value = 0;
+            teamKillsEdit.value = 0;
+            teamRankingPointsEdit.value = 0;
+
+
+            try {
+                const teamDoc = await teamsCollection.doc(currentTeamCode).get();
+
+                if (!teamDoc.exists) {
+                    hideAllUIElements();
+                    dataInputSection.style.display = 'block';
+                    tournamentsDisplaySection.style.display = 'block'; // Keep tournaments visible
+                    displayMessage(errorMessage, `Team with code "${currentTeamCode}" not found.`, 'error');
+                    return;
+                }
+
+                const teamData = teamDoc.data();
+                currentTeamNameDisplay.textContent = teamData.teamName || currentTeamCode; 
+
+                // Display Current Team Stats (read-only)
+                currentTeamMatchesDisplay.textContent = `Current: ${teamData.matches || 0}`;
+                currentTeamWinsDisplay.textContent = `Current: ${teamData.wins || 0}`;
+                currentTeamKillsDisplay.textContent = `Current: ${teamData.kills || 0}`;
+                currentTeamRankingPointsDisplay.textContent = `Current: ${teamData.rankingPoints || 0}`;
+
+                // Populate Player Stats (read-only current avg and additive inputs)
+                if (teamData.members && teamData.members.length > 0) {
+                    for (const gameUid of teamData.members) {
+                        const playerDoc = await usersCollection.doc(gameUid).get();
+                        const playerData = playerDoc.exists ? playerDoc.data() : {
+                            uid: gameUid,
+                            realName: 'Unknown Player',
+                            ign: 'N/A',
+                            playerKills: 0,
+                            playerMatches: 0,
+                            avgKills: 0.00
+                        };
+
+                        const listItem = document.createElement('li');
+                        listItem.innerHTML = `
+                            <div class="player-header">
+                                <div class="ign-uid-box"> <span class="player-name">${playerData.ign || playerData.realName || 'Unknown'}</span>
+                                    <span class="player-uid">UID: ${playerData.uid || gameUid}</span>
+                                </div>
+                            </div>
+                            <div class="data-field">
+                                <label>Kills to Add:</label>
+                                <span id="currentPlayerKills-${gameUid}" class="current-value">Current: ${playerData.playerKills || 0}</span>
+                                <input type="number" id="playerKills-${gameUid}" min="0" value="0" data-player-uid="${gameUid}">
+                            </div>
+                            <div class="data-field">
+                                <label>Matches to Add:</label>
+                                <span id="currentPlayerMatches-${gameUid}" class="current-value">Current: ${playerData.playerMatches || 0}</span>
+                                <input type="number" id="playerMatches-${gameUid}" min="0" value="0" data-player-uid="${gameUid}">
+                            </div>
+                            <div class="data-field">
+                                <label>Current Avg. Kills:</label>
+                                <input type="text" id="avgKills-${gameUid}" value="${playerData.avgKills || '0.00'}" readonly>
+                            </div>
+                        `;
+                        playersStatsList.appendChild(listItem);
+
+                        // Store references to input fields for saving and current average display
+                        playerStatsInputs[gameUid] = {
+                            killsInput: document.getElementById(`playerKills-${gameUid}`),
+                            matchesInput: document.getElementById(`playerMatches-${gameUid}`),
+                            avgDisplay: document.getElementById(`avgKills-${gameUid}`),
+                            currentKillsDisplay: document.getElementById(`currentPlayerKills-${gameUid}`),
+                            currentMatchesDisplay: document.getElementById(`currentPlayerMatches-${gameUid}`)
+                        };
+                    }
+                } else {
+                    displayMessage(noPlayersMessage, 'No members found for this team.');
+                }
+
+                hideAllUIElements();
+                dataInputSection.style.display = 'block';
+                tournamentsDisplaySection.style.display = 'block'; // Keep tournaments visible
+                editFormSection.style.display = 'block';
+
+            } catch (error) {
+                console.error("Error loading team data:", error);
+                hideAllUIElements();
+                dataInputSection.style.display = 'block';
+                tournamentsDisplaySection.style.display = 'block'; // Keep tournaments visible
+                displayMessage(errorMessage, "Error retrieving team data: " + error.message, 'error');
+            }
+        };
+
+        // Function to save all changes (additive)
+        const saveAllChanges = async () => {
+            if (!currentTeamCode) {
+                displayMessage(errorMessage, 'No team loaded to save changes for.', 'error');
+                return;
+            }
+
+            hideAllUIElements();
+            loadingSpinner.style.display = 'block';
+            displayMessage(systemMessage, 'Saving changes...', 'info');
+
+            try {
+                // 1. Update Team Document (Additive)
+                const teamDocRef = teamsCollection.doc(currentTeamCode);
+                const currentTeamDoc = await teamDocRef.get(); // Re-fetch for latest data
+                const existingTeamData = currentTeamDoc.data();
+
+                const matchesToAdd = parseFloat(teamMatchesEdit.value) || 0;
+                const winsToAdd = parseFloat(teamWinsEdit.value) || 0;
+                const killsToAdd = parseFloat(teamKillsEdit.value) || 0;
+                const rankingPointsToAdd = parseFloat(teamRankingPointsEdit.value) || 0;
+
+                const updatedTeamData = {
+                    matches: (existingTeamData.matches || 0) + matchesToAdd,
+                    wins: (existingTeamData.wins || 0) + winsToAdd,
+                    kills: (existingTeamData.kills || 0) + killsToAdd,
+                    rankingPoints: (existingTeamData.rankingPoints || 0) + rankingPointsToAdd,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                };
+                await teamDocRef.update(updatedTeamData);
+
+                // Reset team input fields to 0 after saving
+                teamMatchesEdit.value = 0;
+                teamWinsEdit.value = 0;
+                teamKillsEdit.value = 0;
+                teamRankingPointsEdit.value = 0;
+
+                // Update current value displays for team stats
+                currentTeamMatchesDisplay.textContent = `Current: ${updatedTeamData.matches}`;
+                currentTeamWinsDisplay.textContent = `Current: ${updatedTeamData.wins}`;
+                currentTeamKillsDisplay.textContent = `Current: ${updatedTeamData.kills}`;
+                currentTeamRankingPointsDisplay.textContent = `Current: ${updatedTeamData.rankingPoints}`;
+
+
+                // 2. Update Player Documents (Additive)
+                for (const gameUid in playerStatsInputs) {
+                    const playerDocRef = usersCollection.doc(gameUid);
+                    const currentPlayerDoc = await playerDocRef.get(); // Re-fetch for latest data
+                    const existingPlayerData = currentPlayerDoc.data();
+
+                    const killsToAdd = parseFloat(playerStatsInputs[gameUid].killsInput.value) || 0;
+                    const matchesToAdd = parseFloat(playerStatsInputs[gameUid].matchesInput.value) || 0;
+
+                    const newPlayerKills = (existingPlayerData.playerKills || 0) + killsToAdd;
+                    const newPlayerMatches = (existingPlayerData.playerMatches || 0) + matchesToAdd;
+                    const newAvgKills = newPlayerMatches > 0 ? (newPlayerKills / newPlayerMatches) : 0;
+
+                    const updatedPlayerData = {
+                        playerKills: newPlayerKills,
+                        playerMatches: newPlayerMatches,
+                        avgKills: newAvgKills.toFixed(2) // Save as string with 2 decimal places
+                    };
+                    await playerDocRef.update(updatedPlayerData);
+
+                    // Reset player input fields to 0 after saving
+                    playerStatsInputs[gameUid].killsInput.value = 0;
+                    playerStatsInputs[gameUid].matchesInput.value = 0;
+                    
+                    // Update current value displays and average for players
+                    playerStatsInputs[gameUid].avgDisplay.value = newAvgKills.toFixed(2);
+                    playerStatsInputs[gameUid].currentKillsDisplay.textContent = `Current: ${newPlayerKills}`;
+                    playerStatsInputs[gameUid].currentMatchesDisplay.textContent = `Current: ${newPlayerMatches}`;
+                }
+
+                hideAllUIElements();
+                displayMessage(systemMessage, 'All changes saved successfully!', 'success');
+                dataInputSection.style.display = 'block';
+                tournamentsDisplaySection.style.display = 'block'; // Keep tournaments visible
+                editFormSection.style.display = 'block';
+
+            } catch (error) {
+                console.error("Error saving changes:", error);
+                hideAllUIElements();
+                displayMessage(errorMessage, "Failed to save changes: " + error.message, 'error');
+                dataInputSection.style.display = 'block';
+                tournamentsDisplaySection.style.display = 'block'; // Keep tournaments visible
+                editFormSection.style.display = 'block';
+            }
+        };
+
+        // --- NEW FUNCTIONS FOR TOURNAMENT LISTING ---
+
+        // Function to fetch and display all tournaments (only called if authorized)
+        const fetchAndDisplayAllTournaments = async () => {
+            loadingSpinner.style.display = 'block'; // Show spinner
+            tournamentsList.innerHTML = ''; // Clear previous list
+            tournamentsList.style.display = 'none'; // Hide list until data is ready
+            noTournamentsMessageTournaments.style.display = 'none'; // Hide "No tournaments" message
+
+            try {
+                const snapshot = await tournamentsCollection.get();
+                loadingSpinner.style.display = 'none'; // Hide spinner after fetch
+
+                if (snapshot.empty) {
+                    noTournamentsMessageTournaments.style.display = 'block'; // Show "No tournaments" message
+                    return;
+                }
+
+                tournamentsList.style.display = 'block'; // Show the list
+                snapshot.forEach(doc => {
+                    const tournamentData = doc.data();
+                    const tournamentName = tournamentData.name;
+                    const tournamentDate = tournamentData.date || 'Date not specified'; // Use 'date' field for timing
+
+                    const listItem = document.createElement('li');
+                    listItem.innerHTML = `
+                        <div class="tournament-header">
+                            <div class="tournament-info">
+                                <strong>${tournamentName}</strong>
+                                <span>Timing: ${tournamentDate}</span>
+                            </div>
+                            <button class="details-button" data-tournament-name="${tournamentName}">Get Details</button>
+                        </div>
+                        <div id="details-${tournamentName.replace(/\s/g, '-')}" class="details-content">
+                            </div>
+                        `;
+                    tournamentsList.appendChild(listItem);
+                });
+
+            } catch (error) {
+                console.error("Error fetching tournaments:", error);
+                loadingSpinner.style.display = 'none';
+                displayMessage(errorMessage, "Error loading tournaments: " + error.message, 'error');
+            }
+        };
+
+        // Function to display confirmed teams for a specific tournament
+        const displayConfirmedTeams = async (tournamentName) => {
+            const detailsContentDiv = document.getElementById(`details-${tournamentName.replace(/\s/g, '-')}`);
+            detailsContentDiv.innerHTML = '<p class="info-message">Loading teams...</p>'; // Show loading message
+            detailsContentDiv.style.display = 'block'; // Show the details section
+
+            try {
+                const tournamentDocRef = tournamentsCollection.doc(tournamentName);
+                const tournamentSnap = await tournamentDocRef.get();
+
+                if (tournamentSnap.exists) {
+                    const tournamentData = tournamentSnap.data();
+                    const confirmedTeams = tournamentData.pending_payment_confirmations ?
+                                            tournamentData.pending_payment_confirmations.filter(team => team.confirm === true) : [];
+                    
+                    let teamsHtml = '';
+                    if (confirmedTeams.length > 0) {
+                        teamsHtml += '<h3>Confirmed Teams:</h3><ul class="confirmed-teams-list">';
+                        confirmedTeams.forEach(team => {
+                            teamsHtml += `
+                                <li>
+                                    <span><strong>${team.team_name}</strong></span>
+                                    <div class="team-code-group">
+                                        <span class="team-code-value">Code: ${team.team_id}</span>
+                                        <button class="copy-button" data-copy-text="${team.team_id}">Copy</button>
+                                    </div>
+                                </li>
+                            `;
+                        });
+                        teamsHtml += '</ul>';
+                    } else {
+                        teamsHtml = '<p class="info-message">No confirmed teams for this tournament.</p>';
+                    }
+                    detailsContentDiv.innerHTML = teamsHtml;
+
+                } else {
+                    detailsContentDiv.innerHTML = `<p class="info-message">Tournament "${tournamentName}" not found.</p>`;
+                }
+            } catch (error) {
+                console.error("Error fetching confirmed teams for", tournamentName, ":", error);
+                detailsContentDiv.innerHTML = '<p class="error-message">Error loading teams. Please try again.</p>';
+            }
+        };
+
+
+        // Event Listeners
+        loadTeamDataButton.addEventListener('click', loadTeamData);
+        saveAllChangesButton.addEventListener('click', saveAllChanges);
+
+        // NEW: Event delegation for "Get Details" buttons and "Copy" buttons (for tournaments)
+        tournamentsList.addEventListener('click', (event) => {
+            if (event.target.classList.contains('details-button')) {
+                const button = event.target;
+                const tournamentName = button.dataset.tournamentName;
+                const detailsContentDiv = document.getElementById(`details-${tournamentName.replace(/\s/g, '-')}`);
+
+                // Toggle visibility and fetch/display if not already visible
+                if (detailsContentDiv.style.display === 'block') {
+                    detailsContentDiv.style.display = 'none';
+                    button.textContent = 'Get Details';
+                } else {
+                    displayConfirmedTeams(tournamentName);
+                    button.textContent = 'Hide Details';
+                }
+            } else if (event.target.classList.contains('copy-button')) { // Event listener for copy button
+                const button = event.target;
+                const textToCopy = button.dataset.copyText;
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    const originalText = button.textContent;
+                    button.textContent = 'Copied!';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                    }, 1000); // Change back after 1 second
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            }
+        });
+
+
+        // Initial Authentication and Permission Check
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                displayMessage(authStatusMessage, 'User authenticated. Checking permissions...', 'info');
+                try {
+                    const userQuerySnapshot = await usersCollection.where('firebaseUID', '==', user.uid).limit(1).get();
+
+                    if (!userQuerySnapshot.empty) {
+                        const userDoc = userQuerySnapshot.docs[0];
+                        const userData = userDoc.data();
+
+                        if (userData.isdf === true) {
+                            // User has 'isdf: true' permission
+                            hideAllUIElements();
+                            dataInputSection.style.display = 'block'; 
+                            tournamentsDisplaySection.style.display = 'block'; // NEW: Make tournaments section visible
+                            displayMessage(systemMessage, 'Enter a team code to load and edit stats, or select from tournaments below.', 'info');
+                            fetchAndDisplayAllTournaments(); // NEW: Load tournaments for DF Admin
+                        } else {
+                            // User is authenticated but does not have 'isdf: true'
+                            hideAllUIElements();
+                            displayMessage(errorMessage, 'Permission Denied: Your account does not have DF access.', 'error');
+                        }
+                    } else {
+                        // User is authenticated but no corresponding user document found
+                        hideAllUIElements();
+                        displayMessage(errorMessage, 'Permission Denied: User profile not found. Please contact support.', 'error');
+                    }
+                } catch (error) {
+                    console.error("Error checking user permissions:", error);
+                    hideAllUIElements();
+                    displayMessage(errorMessage, 'Error checking permissions: ' + error.message, 'error');
+                }
+            } else {
+                // User is not signed in
+                hideAllUIElements();
+                displayMessage(errorMessage, 'You must be logged in to view and edit this page. Please log in.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
